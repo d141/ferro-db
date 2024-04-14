@@ -1,5 +1,8 @@
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
+use flate2::{write::GzEncoder, Compression};
+use flate2::read::GzDecoder;
+use std::io::{Write, Read};
 
 #[derive(Serialize, Deserialize)]
 pub struct FerroDB {
@@ -73,17 +76,23 @@ impl FerroDB {
 
     pub fn save_to_file(&self, filename: &str) -> Result<(), std::io::Error> {
         let serialized = serde_json::to_string(&self.collections)?;
-        std::fs::write(filename, serialized)?;
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(serialized.as_bytes())?;
+        let compressed_data = encoder.finish()?;
+        std::fs::write(filename, compressed_data)?;
         Ok(())
     }
 
     pub fn load_from_file(filename: &str) -> Result<Self, std::io::Error> {
-        let data = std::fs::read_to_string(filename)?;
-        let collections: HashMap<String, HashMap<String, String>> = serde_json::from_str(&data)?;
+        let compressed_data = std::fs::read(filename)?;
+        let mut decoder = GzDecoder::new(&compressed_data[..]);
+        let mut decompressed_data = String::new();
+        decoder.read_to_string(&mut decompressed_data)?;
+        let collections: HashMap<String, HashMap<String, String>> = serde_json::from_str(&decompressed_data)?;
         Ok(FerroDB {
             collections,
-            active_collection: None,  // Reset active collection on load
+            active_collection: None,
         })
     }
-    
+
 }
