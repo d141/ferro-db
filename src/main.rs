@@ -31,6 +31,10 @@ fn main() {
                 Ok(_) => println!("Database saved successfully."),
                 Err(e) => println!("Failed to save database: {}", e),
             }
+            match db.save_to_file("changes.fdbz") {
+                Ok(_) => println!("Changes saved successfully."),
+                Err(e) => println!("Failed to save changes: {}", e),
+            }
         }
     });
 
@@ -56,27 +60,30 @@ fn main() {
                             Err(err) => println!("{}", err),
                         }
                     },
-                    "SET" if commands.len() == 3 => {
-                        let mut db = db.lock().unwrap(); // Acquire the lock
-                        match db.set(commands[1].to_string(), commands[2].to_string()) {
+                    "SET" if commands.len() == 4 => {
+                        // commands[1] is the collection, commands[2] is the key, commands[3] is the value
+                        let mut db = db.lock().unwrap();
+                        match db.set(commands[1], commands[2].to_string(), commands[3].to_string()) {
                             Ok(_) => println!("OK"),
-                            Err(err) => println!("{}", err),
+                            Err(err) => println!("Error: {}", err),
                         }
                     },
-                    "GET" if commands.len() == 2 => {
-                        let db = db.lock().unwrap(); // Acquire the lock
-                        match db.get(commands[1]) {
-                            Ok(Some(value)) => println!("{}", value),
-                            Ok(None) => println!("(nil)"),
-                            Err(err) => println!("{}", err),
-                        }
-                    },
-                    "UNSET" if commands.len() == 2 => {
-                        let mut db = db.lock().unwrap(); // Acquire the lock
-                        match db.unset(commands[1]) {
-                            Ok(Some(value)) => println!("OK, removed: {}", value),
+                    "GET" if commands.len() == 3 => {
+                        // commands[1] is the collection, commands[2] is the key
+                        let db = db.lock().unwrap();
+                        match db.get(commands[1], commands[2]) {
+                            Ok(Some(value)) => println!("Value: {}", value),
                             Ok(None) => println!("Key not found"),
-                            Err(err) => println!("{}", err),
+                            Err(err) => println!("Error: {}", err),
+                        }
+                    },
+                    "UNSET" if commands.len() == 3 => {
+                        // commands[1] is the collection, commands[2] is the key
+                        let mut db = db.lock().unwrap();
+                        match db.unset(commands[1], commands[2]) {
+                            Ok(Some(value)) => println!("Removed: {}", value),
+                            Ok(None) => println!("Key not found"),
+                            Err(err) => println!("Error: {}", err),
                         }
                     },
                     "EXIT" => {
