@@ -1,106 +1,55 @@
-extern crate ferrodb; // This line is often optional in the latest editions of Rust
+use ferrodb::FerroDB;  // This assumes your lib.rs re-exports FerroDB
+use ferrodb::run_shell;
 
-use ferrodb::FerroDB;
-use rustyline::Editor;
-use std::{sync::{Arc, Mutex}, thread, time::Duration};
+use std::{sync::{Arc, Mutex}};
+use clap::{Command};
+use actix_web::{HttpServer, App as ActixApp, web};
 
-fn main() {
-    // Define the path to the data file
-    let db_file = "data.fdbz";
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let matches = Command::new("FerroDB")
+        .version("0.1.0")
+        .author("Your Name")
+        .about("FerroDB - A simple key-value store")
+        .subcommand(Command::new("shell")
+            .about("Runs an interactive shell"))
+        .subcommand(Command::new("server")
+            .about("Runs as an HTTP server"))
+        .get_matches();
 
-    // Try to load the database from the file, or create a new instance if it fails
-    let db = Arc::new(Mutex::new(match FerroDB::load_from_file(db_file) {
-        Ok(loaded_db) => {
-            println!("Database loaded successfully.");
-            loaded_db
-        },
-        Err(e) => {
-            println!("Failed to load database: {}. A new database will be used.", e);
-            FerroDB::new()
-        }
-    }));
+        let db_file = "data.fdbz";
 
-    let db_clone = db.clone();
-
-    // Background thread for saving the database periodically
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_secs(60)); // Save every minute
-            let db = db_clone.lock().unwrap();
-            match db.save_to_file(db_file) {
-                Ok(_) => println!("Database saved successfully."),
-                Err(e) => println!("Failed to save database: {}", e),
-            }
-            match db.save_to_file("changes.fdbz") {
-                Ok(_) => println!("Changes saved successfully."),
-                Err(e) => println!("Failed to save changes: {}", e),
-            }
-        }
-    });
-
-    let mut rl = Editor::<()>::new();
-    loop {
-        let readline = rl.readline("ferrodb> ");
-        match readline {
-            Ok(line) => {
-                let commands: Vec<&str> = line.split_whitespace().collect();
-                if commands.is_empty() {
-                    continue;
-                }
-                match commands[0] {
-                    "CREATE" if commands.len() == 2 => {
-                        let mut db = db.lock().unwrap(); // Acquire the lock
-                        db.create_collection(commands[1].to_string());
-                        println!("Collection created");
-                    },
-                    "USE" if commands.len() == 2 => {
-                        let mut db = db.lock().unwrap(); // Acquire the lock
-                        match db.use_collection(commands[1].to_string()) {
-                            Ok(_) => println!("Now using collection: {}", commands[1]),
-                            Err(err) => println!("{}", err),
-                        }
-                    },
-                    "SET" if commands.len() == 4 => {
-                        // commands[1] is the collection, commands[2] is the key, commands[3] is the value
-                        let mut db = db.lock().unwrap();
-                        match db.set(commands[1], commands[2].to_string(), commands[3].to_string()) {
-                            Ok(_) => println!("OK"),
-                            Err(err) => println!("Error: {}", err),
-                        }
-                    },
-                    "GET" if commands.len() == 3 => {
-                        // commands[1] is the collection, commands[2] is the key
-                        let db = db.lock().unwrap();
-                        match db.get(commands[1], commands[2]) {
-                            Ok(Some(value)) => println!("Value: {}", value),
-                            Ok(None) => println!("Key not found"),
-                            Err(err) => println!("Error: {}", err),
-                        }
-                    },
-                    "UNSET" if commands.len() == 3 => {
-                        // commands[1] is the collection, commands[2] is the key
-                        let mut db = db.lock().unwrap();
-                        match db.unset(commands[1], commands[2]) {
-                            Ok(Some(value)) => println!("Removed: {}", value),
-                            Ok(None) => println!("Key not found"),
-                            Err(err) => println!("Error: {}", err),
-                        }
-                    },
-                    "EXIT" => {
-                        let db = db.lock().unwrap(); // Acquire the lock
-                        match db.save_to_file("data.fdbz") {
-                            Ok(_) => println!("Database saved successfully."),
-                            Err(e) => println!("Failed to save database: {}", e),
-                        }
-                        break;
-                    },
-                    _ => println!("Unknown command or wrong number of arguments"),
-                }
+        // Try to load the database from the file, or create a new instance if it fails
+        let db = Arc::new(Mutex::new(match FerroDB::load_from_file(db_file) {
+            Ok(loaded_db) => {
+                println!("Database loaded successfully.");
+                loaded_db
             },
-            Err(_) => {
-                println!("Error reading line");
-                break;
+            Err(e) => {
+                println!("Failed to load database: {}. A new database will be used.", e);
+                FerroDB::new()
             }
+        }));
+
+    match matches.subcommand() {
+        Some(("shell", _)) => {
+            run_shell(db, db_file.to_string()).await;
+        }
+        Some(("server", _)) => {
+            HttpServer::new(move || {
+                ActixApp::new()
+                    .app_data(web::Data::new(db.clone()))
+                    // Define routes
+            })
+            .bind("127.0.0.1:8080")?
+            .run()
+            .await?
+        }
+        _ => {
+            println!("No command specified, use --help for info");
         }
     }
+
+    Ok(())
 }
+
