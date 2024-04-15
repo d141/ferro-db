@@ -1,5 +1,6 @@
 use ferrodb::FerroDB;  // This assumes your lib.rs re-exports FerroDB
 use ferrodb::run_shell;
+use ferrodb::{get_fn, set_fn, unset_fn};
 
 use std::{sync::{Arc, Mutex}};
 use clap::{Command};
@@ -9,7 +10,7 @@ use actix_web::{HttpServer, App as ActixApp, web};
 async fn main() -> std::io::Result<()> {
     let matches = Command::new("FerroDB")
         .version("0.1.0")
-        .author("Your Name")
+        .author("David Van Anda")
         .about("FerroDB - A simple key-value store")
         .subcommand(Command::new("shell")
             .about("Runs an interactive shell"))
@@ -39,9 +40,11 @@ async fn main() -> std::io::Result<()> {
             HttpServer::new(move || {
                 ActixApp::new()
                     .app_data(web::Data::new(db.clone()))
-                    // Define routes
+                    .route("/set/{collection}/{key}", web::post().to(set_fn))
+                    .route("/get/{collection}/{key}", web::get().to(get_fn))
+                    .route("/unset/{collection}/{key}", web::delete().to(unset_fn))
             })
-            .bind("127.0.0.1:8080")?
+            .bind("127.0.0.1:9876")?
             .run()
             .await?
         }
